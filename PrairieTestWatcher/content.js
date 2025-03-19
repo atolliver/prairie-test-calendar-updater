@@ -1,3 +1,5 @@
+console.log("Content script loaded!")
+
 function detectExamChanges() {
   let exams = document.querySelectorAll('div[data-testid="exam"]');
 
