@@ -1,3 +1,3 @@
-Set WshShell = CreateObject("WScript.Shell") 
-WshShell.Run chr(34) & "C:\Users\Alex\StudioProjects\Prairie_Test_Calendar\Backend\flask_server.bat" & Chr(34), 0
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "cmd /c python C:\Users\Alex\StudioProjects\prairie-test-calendar-updater\Backend\flask_server.py", 0, False
 Set WshShell = Nothing

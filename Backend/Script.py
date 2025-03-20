@@ -221,11 +221,12 @@ def callback():
         return f"Authentication failed: {token_result.get('error_description')}"
 
 
-# if __name__ == "__main__":
-#     if not os.path.exists("token.json"):
-#         flask_app.run(port=5000, debug=True)
-#     # else:
-#     #     print("Token already exists, skipping Flask authentication.")
+if __name__ == "__main__":
+
+    if not os.path.exists("token.json"):
+        flask_app.run(port=5000, debug=True)
+    # else:
+    #     print("Token already exists, skipping Flask authentication.")
 
 
 calendar_id = "AAMkADdjZjViYWJjLTRiZTEtNDdlMC1hMzc1LTFjYzU5MzJmYjkwOQBGAAAAAACD9BeA853jQ5PPw2j8j_AfBwC46U3_r-acQJyslCG-OgDZAAAAAAEGAAC46U3_r-acQJyslCG-OgDZAAFLJcMzAAA="
@@ -433,52 +434,48 @@ def update_or_create_event(access_token, subject, start_time, exam_duration, loc
 
 
 # Microsoft API credentials
-
 AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
 SCOPES = ["Calendars.ReadWrite"]
 
 # MSAL App Instance
 app = msal.ConfidentialClientApplication(
-    CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET)
+    CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET
+)
 
 # Retrieve a valid access token, refreshing it if necessary
 BASE_DIR = os.path.dirname(os.path.abspath(
     __file__))  # Get the script's directory
-token_file_path = os.path.join(BASE_DIR, "token.json")
+TOKEN_FILE_PATH = os.path.join(BASE_DIR, "token.json")
 
 
 def get_access_token():
-    # Check if token.json exists
-    if not os.path.exists(token_file_path):
+    """Retrieve an access token from token.json or refresh it if possible."""
+    if not os.path.exists(TOKEN_FILE_PATH):
         print(
-            f"Token file not found at {token_file_path}. Please log in first.")
+            f"Token file not found at {TOKEN_FILE_PATH}. Please log in first.")
         return None
 
-    # Load the token file
-    with open(token_file_path, "r") as token_file:
-        try:
+    try:
+        with open(TOKEN_FILE_PATH, "r") as token_file:
             token_data = json.load(token_file)
-        except json.JSONDecodeError:
-            print("Error: token.json is corrupted or empty.")
-            return None
+    except json.JSONDecodeError:
+        print("Error: token.json is corrupted or empty.")
+        return None
 
-    # Debug: Print stored token data
-    # print("Stored Token Data:", token_data)
+    if "access_token" in token_data:
+        print("Using stored access token.")
+        return token_data["access_token"]
 
     # Check if refresh token is available
     if "refresh_token" in token_data:
-        # print("Refreshing access token using stored refresh token...")
+        print("Refreshing access token using stored refresh token...")
         new_token = app.acquire_token_by_refresh_token(
             token_data["refresh_token"], SCOPES)
 
-        # Debug: Print new token response
-        # print("New Token Response:", new_token)
-
         if "access_token" in new_token:
-            # Save the updated token data
-            with open(token_file_path, "w") as token_file:
+            print("Access token refreshed successfully! Saving to token.json.")
+            with open(TOKEN_FILE_PATH, "w") as token_file:
                 json.dump(new_token, token_file)
-            # print("Access token refreshed successfully!")
             return new_token["access_token"]
         else:
             print("Failed to refresh token. Re-authentication required.")
@@ -488,12 +485,12 @@ def get_access_token():
         return None
 
 
+# Fetch access token
 access_token = get_access_token()
 
 if not access_token:
     print("No valid access token available. Please run Flask authentication.")
-    exit()
-
+    exit(1)
 
 # Fetch calendar events once before parallel execution
 events_cache = get_calendar_events_dict(access_token)

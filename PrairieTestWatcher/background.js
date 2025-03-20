@@ -1,15 +1,17 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "triggerScript") {
-    fetch("http://localhost:5000/run-script", {
-      method: "POST",
-    })
-      .then((response) => {
-        if (response.ok) {
-          console.log("Script successfully triggered!");
-        } else {
-          console.error("Failed to trigger script.");
-        }
-      })
-      .catch((error) => console.error("Error:", error));
+  console.log("Received message in background.js:", message);
+
+  if (message.action === "examChanged") {
+      fetch("http://127.0.0.1:5000/run-script", { method: "POST" })
+          .then(response => response.text())
+          .then(data => {
+              console.log("Script executed:", data);
+              sendResponse({ status: "success", message: "Script executed successfully" });
+          })
+          .catch(error => {
+              console.error("Error running script:", error);
+              sendResponse({ status: "error", message: error.toString() });
+          });
+      return true;  // Keep message channel open for async response
   }
 });

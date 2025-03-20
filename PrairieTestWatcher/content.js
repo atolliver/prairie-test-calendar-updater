@@ -1,22 +1,27 @@
-console.log("Content script loaded!")
+let lastExamState = null;
+let lastUpdateTime = 0;
+const updateInterval = 5000; // Limit updates to once every 5 seconds
 
 function detectExamChanges() {
+  console.log("Detecting exam changes...");
+
   let exams = document.querySelectorAll('div[data-testid="exam"]');
+  if (exams.length === 0) {
+    console.log("No exams detected.");
+    return;
+  }
 
-  if (exams.length > 0) {
-    let examData = Array.from(exams).map((exam) => exam.innerText.trim());
-    let newExamState = JSON.stringify(examData);
+  let newExamState = Array.from(exams).map((exam) => exam.innerText).join(",");
 
-    chrome.storage.local.get(["lastExamState"], (result) => {
-      if (result.lastExamState !== newExamState) {
-        console.log("Exam updates detected!");
-        chrome.storage.local.set({ lastExamState: newExamState });
+  let currentTime = Date.now();
+  if (newExamState !== lastExamState && currentTime - lastUpdateTime > updateInterval) {
+    console.log("Exam changes detected, sending update...");
+    chrome.runtime.sendMessage({ action: "examChanged" });
 
-        chrome.runtime.sendMessage({ action: "exam_updated" });
-      }
-    });
+    lastExamState = newExamState;
+    lastUpdateTime = currentTime;
   }
 }
 
-// Run exam detection every 10 seconds
-setInterval(detectExamChanges, 10000);
+// Run change detection every 3 seconds (adjust as needed)
+setInterval(detectExamChanges, 3000);

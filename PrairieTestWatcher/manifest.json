@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PrairieTest Watcher",
-  "version": "1.0",
+  "version": "1.2",
   "description": "Monitors PrairieTest for exam changes and triggers a script.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://us.prairietest.com/*"],
