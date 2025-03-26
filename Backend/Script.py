@@ -162,7 +162,7 @@ for name_elem in exam_name_elements:
     exam_data.append((exam_name, exam_date, exam_location, exam_duration))
 
 # Save to file
-with open("exam_details.txt", "w", encoding="utf-8") as f:
+with open("Backend\\exam_details.txt", "w", encoding="utf-8") as f:
     f.write("Exam Name, Exam Date, Exam Location, Exam Duration\n")
     f.writelines(f"\"{name}\", \"{date}\", \"{location}\", \"{duration}\"\n" for name,
                  date, location, duration in exam_data)
