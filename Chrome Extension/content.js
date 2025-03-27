@@ -98,4 +98,4 @@ function monitorPrairieTest() {
   }
 }
 
-setInterval(monitorPrairieTest, 3000);
+setInterval(monitorPrairieTest, 10000);
