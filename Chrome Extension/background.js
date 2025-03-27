@@ -1,3 +1,7 @@
+const CLIENT_ID = "77fe4d41-e7b9-4ef4-9cfe-bec4f55b8ab4";
+const REDIRECT_URI = `https://fpkimbehnffaomhmcedgfaagbiojdbbn.chromiumapp.org/`;
+const SCOPE = "https://graph.microsoft.com/Calendars.ReadWrite offline_access";
+
 let lastExamState = null;
 const calendar_name = "Exams";
 const event_notes = "Synced Automatically";
@@ -303,4 +307,52 @@ function getDurationMinutes(duration) {
 
   const short = duration.match(/(\d+)\s*min/i);
   return short ? parseInt(short[1], 10) : 60;
+}
+
+
+// On extension startup:
+chrome.runtime.onStartup.addListener(() => {
+  refreshTokenIfNeeded();
+});
+
+async function refreshTokenIfNeeded() {
+  chrome.storage.local.get("ms_token", async ({ ms_token }) => {
+    if (!ms_token) return;
+    if (!ms_token.refresh_token) return;
+
+    // If your ms_token has an 'expires_in' or 'expires_on', check if it's near expiry
+    // e.g. if Date.now() > ms_token.expires_on - 60s => refresh
+
+    try {
+      const newToken = await refreshWithMicrosoft(ms_token.refresh_token);
+      if (newToken.access_token) {
+        chrome.storage.local.set({ ms_token: newToken });
+        console.log("Successfully refreshed token!");
+      }
+    } catch (err) {
+      console.warn("Refresh token failed:", err);
+    }
+  });
+}
+
+async function refreshWithMicrosoft(refresh_token) {
+  const tokenUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+  const bodyParams = new URLSearchParams({
+    client_id: CLIENT_ID,  
+    grant_type: "refresh_token",
+    refresh_token,
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPE
+  });
+
+  const resp = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: bodyParams.toString(),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error("Refresh failed: " + JSON.stringify(err));
+  }
+  return resp.json();
 }

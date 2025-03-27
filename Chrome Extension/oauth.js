@@ -1,90 +1,113 @@
 const CLIENT_ID = "77fe4d41-e7b9-4ef4-9cfe-bec4f55b8ab4";
-const REDIRECT_URI =
-  "https://fpkimbehnffaomhmcedgfaagbiojdbbn.chromiumapp.org/";
+const REDIRECT_URI = `https://fpkimbehnffaomhmcedgfaagbiojdbbn.chromiumapp.org/`;
 const AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0";
 const SCOPE = "https://graph.microsoft.com/Calendars.ReadWrite offline_access";
 
-function base64URLEncode(str) {
-  return btoa(String.fromCharCode(...new Uint8Array(str)))
+function base64URLEncode(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)))
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 }
 
 async function generatePKCE() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  const codeVerifier = base64URLEncode(randomBytes);
   const encoder = new TextEncoder();
-  const codeVerifier = base64URLEncode(
-    crypto.getRandomValues(new Uint8Array(32))
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(codeVerifier)
   );
-  const codeChallenge = base64URLEncode(
-    await crypto.subtle.digest("SHA-256", encoder.encode(codeVerifier))
-  );
+  const codeChallenge = base64URLEncode(digest);
   return { codeVerifier, codeChallenge };
 }
 
 export async function loginWithMicrosoft() {
-  console.log("🔐 Starting Microsoft login (implicit flow)...");
+  console.log("Starting Microsoft login with code flow + PKCE...");
 
+  const { codeVerifier, codeChallenge } = await generatePKCE();
   const state = crypto.randomUUID();
 
   const authUrl =
     `${AUTHORITY}/authorize?` +
     `client_id=${encodeURIComponent(CLIENT_ID)}` +
-    `&response_type=token` +
+    `&response_type=code` +
     `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
-    `&response_mode=fragment` +
     `&scope=${encodeURIComponent(SCOPE)}` +
-    `&state=${state}`;
+    `&code_challenge=${codeChallenge}` +
+    `&code_challenge_method=S256` +
+    `&state=${state}` +
+    `&response_mode=fragment`;
 
-  console.log("➡️ Redirecting to:", authUrl);
+  console.log("➡️ Opening:", authUrl);
 
   return new Promise((resolve, reject) => {
     chrome.identity.launchWebAuthFlow(
       { url: authUrl, interactive: true },
       async (redirectUri) => {
-        console.log("🔄 Returned from Microsoft login");
-
         if (chrome.runtime.lastError) {
-          console.error("❌ Runtime error:", chrome.runtime.lastError.message);
+          console.error("Auth error:", chrome.runtime.lastError.message);
           return reject(new Error(chrome.runtime.lastError.message));
         }
-
         if (!redirectUri) {
-          console.error("❌ No redirect URI received");
-          return reject(new Error("No redirect URI received"));
+          return reject(new Error("No redirect URI returned"));
         }
-
-        console.log("📥 Redirect URI:", redirectUri);
 
         const url = new URL(redirectUri);
-        const params = new URLSearchParams(url.hash.substring(1)); // after '#'
-
+        const params = new URLSearchParams(url.hash.substring(1));
         if (params.get("error")) {
-          console.error(
-            "❌ Microsoft auth error:",
-            params.get("error_description")
-          );
-          return reject(new Error(params.get("error_description")));
+          const desc = params.get("error_description") || "Unknown error";
+          console.error("Error param:", desc);
+          return reject(new Error(desc));
         }
 
-        const token = params.get("access_token");
-
-        if (!token) {
-          console.error("❌ No token in redirect URI");
-          return reject(new Error("No access token received"));
+        const code = params.get("code");
+        const returnedState = params.get("state");
+        if (!code) {
+          return reject(new Error("No code in response"));
+        }
+        if (returnedState !== state) {
+          return reject(new Error("State mismatch"));
         }
 
-        const result = {
-          access_token: token,
-          expires_in: params.get("expires_in"),
-          scope: params.get("scope"),
-          token_type: params.get("token_type"),
-        };
+        console.log("Got auth code:", code);
 
-        console.log("✅ Access token received!", result);
-        chrome.storage.local.set({ ms_token: result });
-        resolve(result);
+        try {
+          const tokenJson = await exchangeCodeForToken(code, codeVerifier);
+          chrome.storage.local.set({ ms_token: tokenJson });
+          console.log("Token exchange success:", tokenJson);
+          resolve(tokenJson);
+        } catch (ex) {
+          console.error("Token exchange failed:", ex);
+          reject(ex);
+        }
       }
     );
   });
+}
+
+async function exchangeCodeForToken(code, codeVerifier) {
+  const tokenUrl = `${AUTHORITY}/token`;
+
+  const bodyParams = new URLSearchParams({
+    client_id: CLIENT_ID,
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: REDIRECT_URI,
+    code_verifier: codeVerifier,
+    scope: SCOPE,
+  });
+
+  const response = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: bodyParams.toString(),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error("Token request failed: " + JSON.stringify(err));
+  }
+
+  return response.json(); 
 }

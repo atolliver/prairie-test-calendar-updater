@@ -12,7 +12,7 @@ document.getElementById("forceSync").addEventListener("click", () => {
 document.getElementById("msLogin").addEventListener("click", async () => {
   document.getElementById("status").textContent = "Logging in to Microsoft...";
   try {
-    const token = await loginWithMicrosoft();
+    const token = await loginWithMicrosoft(); // new code flow
     console.log("Microsoft token:", token);
     document.getElementById("status").textContent = "Logged in successfully!";
   } catch (err) {
