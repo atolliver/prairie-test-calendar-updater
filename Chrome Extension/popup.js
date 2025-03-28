@@ -1,7 +1,17 @@
-import { authenticateWithGoogle, loginWithMicrosoft } from "./oauth.js";
+import { loginWithMicrosoft, authenticateWithGoogle } from "./oauth.js";
 
-document.getElementById("forceSync-btn").addEventListener("click", () => {
+document.getElementById("forceSync-btn").addEventListener("click", async () => {
   document.getElementById("status").textContent = "Triggering sync...";
+
+  const provider = await getCalendarProvider();
+  const token = await ensureLoggedIn(provider);
+
+  if (!token) {
+    document.getElementById("status").textContent =
+      "Login required for selected provider.";
+    return;
+  }
+
   chrome.storage.local.get("lastExamState", (data) => {
     const examData = data.lastExamState || "";
     chrome.runtime.sendMessage({ action: "syncCalendar", examData });
@@ -9,131 +19,119 @@ document.getElementById("forceSync-btn").addEventListener("click", () => {
   });
 });
 
-document.getElementById("ms-login-btn").addEventListener("click", async () => {
-  document.getElementById("status").textContent = "Logging in to Microsoft...";
-  try {
-    const token = await loginWithMicrosoft();
-    console.log("Microsoft token:", token);
-    document.getElementById("status").textContent = "Logged in successfully!";
-  } catch (err) {
-    console.error("Microsoft login failed:", err);
-    document.getElementById("status").textContent = "Login failed!";
+document.getElementById("testPush-btn").addEventListener("click", async () => {
+  const provider = await getCalendarProvider();
+  const token = await ensureLoggedIn(provider);
+
+  if (!token) {
+    console.error("Login required.");
+    document.getElementById("status").textContent =
+      "Login required to push test event.";
+    return;
   }
-});
 
-document.getElementById("google-login-btn").addEventListener("click", async () => {
-  document.getElementById("status").textContent = "Logging in to Google...";
-  try {
-    const token = await authenticateWithGoogle();
-    console.log("Google token:", token);
-    document.getElementById("status").textContent = "Logged in successfully!";
-  } catch (err) {
-    console.error("Google login failed:", err);
-    document.getElementById("status").textContent = "Login failed!";
-  }
-});
+  // 🔍 DEBUG: Check stored tokens
+  chrome.storage.local.get(["google_token", "ms_token"], (data) => {
+    console.log("🔑 Stored Google Token:", data.google_token);
+    console.log("🔑 Stored Microsoft Token:", data.ms_token);
+  });
 
-document.getElementById("testPush-btn").addEventListener("click", () => {
-  chrome.storage.local.get(
-    ["preferredCalendar", "ms_token", "google_token"],
-    async ({ preferredCalendar, ms_token, google_token }) => {
-      const event = {
-        summary: "PrairieTest Demo Event",
-        subject: "PrairieTest Demo Event",
-        start: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        end: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
-        location: "Demo Location",
-        description: "This is a test event from the PrairieTest extension",
-      };
+  if (provider === "outlook") {
+    const event = {
+      subject: "PrairieTest Demo Event",
+      start: {
+        dateTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        timeZone: "UTC",
+      },
+      end: {
+        dateTime: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
+        timeZone: "UTC",
+      },
+      location: {
+        displayName: "Demo Location",
+      },
+      body: {
+        contentType: "HTML",
+        content: "This is a test event from the PrairieTest extension",
+      },
+    };
 
-      if (preferredCalendar === "google") {
-        if (!google_token) {
-          console.error("No Google token found");
-          return;
+    try {
+      const response = await fetch(
+        "https://graph.microsoft.com/v1.0/me/events",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(event),
         }
+      );
 
-        const response = await fetch(
-          "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${google_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              summary: event.summary,
-              location: event.location,
-              description: event.description,
-              start: {
-                dateTime: event.start,
-                timeZone: "America/Chicago",
-              },
-              end: {
-                dateTime: event.end,
-                timeZone: "America/Chicago",
-              },
-            }),
-          }
-        );
-
-        const result = await response.json();
-        if (response.ok) {
-          console.log("Google event created:", result);
-          document.getElementById("status").textContent =
-            "Google event successfully created!";
-        } else {
-          console.error("Error creating Google event:", result);
-          document.getElementById("status").textContent =
-            "Failed to create Google event.";
-        }
+      const result = await response.json();
+      if (response.ok) {
+        console.log("📅 Outlook event created:", result);
+        document.getElementById("status").textContent =
+          "Event pushed to Outlook!";
       } else {
-        if (!ms_token?.access_token) {
-          console.error("No Microsoft token found");
-          return;
-        }
-
-        const response = await fetch(
-          "https://graph.microsoft.com/v1.0/me/events",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${ms_token.access_token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              subject: event.subject,
-              start: {
-                dateTime: event.start,
-                timeZone: "Central Standard Time",
-              },
-              end: {
-                dateTime: event.end,
-                timeZone: "Central Standard Time",
-              },
-              location: {
-                displayName: event.location,
-              },
-              body: {
-                contentType: "HTML",
-                content: event.description,
-              },
-            }),
-          }
-        );
-
-        const result = await response.json();
-        if (response.ok) {
-          console.log("Outlook event created:", result);
-          document.getElementById("status").textContent =
-            "Outlook event successfully created!";
-        } else {
-          console.error("Error creating Outlook event:", result);
-          document.getElementById("status").textContent =
-            "Failed to create Outlook event.";
-        }
+        console.error("❌ Outlook push failed:", result);
+        document.getElementById("status").textContent =
+          "Failed to push event to Outlook.";
       }
+    } catch (err) {
+      console.error("❗ Outlook push error:", err);
+      document.getElementById("status").textContent =
+        "Error pushing to Outlook.";
     }
-  );
+  } else if (provider === "google") {
+    const event = {
+      summary: "PrairieTest Demo Event",
+      start: {
+        dateTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+        timeZone: "America/Chicago",
+      },
+      end: {
+        dateTime: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
+        timeZone: "America/Chicago",
+      },
+      location: "Demo Location",
+      description: "This is a test event from the PrairieTest extension",
+    };
+
+    try {
+      const response = await fetch(
+        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(event),
+        }
+      );
+
+      const result = await response.json();
+      if (response.ok) {
+        console.log("📅 Google event created:", result);
+        document.getElementById("status").textContent =
+          "Event pushed to Google Calendar!";
+      } else {
+        console.error("❌ Google push failed:", result);
+        document.getElementById("status").textContent =
+          "Failed to push event to Google Calendar.";
+      }
+    } catch (err) {
+      console.error("❗ Google push error:", err);
+      document.getElementById("status").textContent =
+        "Error pushing to Google Calendar.";
+    }
+  } else {
+    console.error("❌ Unknown provider:", provider);
+    document.getElementById("status").textContent =
+      "Unknown calendar provider.";
+  }
 });
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -149,3 +147,32 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.storage.local.set({ preferredCalendar: calendarToggle.value });
   });
 });
+
+async function getCalendarProvider() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("preferredCalendar", ({ preferredCalendar }) => {
+      resolve(preferredCalendar || "outlook");
+    });
+  });
+}
+
+export async function ensureLoggedIn(provider) {
+  return new Promise((resolve) => {
+    if (provider === "google") {
+      chrome.storage.local.get("google_token", async ({ google_token }) => {
+        if (google_token) return resolve(google_token);
+        const token = await authenticateWithGoogle();
+        return resolve(token);
+      });
+    } else if (provider === "outlook") {
+      chrome.storage.local.get("ms_token", async ({ ms_token }) => {
+        if (ms_token?.access_token) return resolve(ms_token.access_token);
+        const token = await loginWithMicrosoft();
+        return resolve(token?.access_token || null);
+      });
+    } else {
+      console.error("Unknown provider:", provider);
+      resolve(null);
+    }
+  });
+}
