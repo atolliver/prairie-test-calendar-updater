@@ -23,9 +23,18 @@
   </head>
   <body>
     <h2>PrairieTest Calendar Sync</h2>
-    <button id="forceSync">Force Sync</button>
-    <button id="msLogin">Login with Microsoft</button>
-    <button id="testPush">Push Test Event</button>
+
+    <label for="calendarChoice">Sync With:</label>
+    <select id="calendarChoice">
+      <option value="outlook">Outlook</option>
+      <option value="google">Google</option>
+    </select>
+
+    <button id="forceSync-btn">Force Sync</button>
+    <button id="ms-login-btn">Login with Microsoft</button>
+    <button id="google-login-btn">Login with Google</button>
+    <button id="testPush-btn">Push Test Event</button>
+
     <p id="status"></p>
   </body>
 </html>

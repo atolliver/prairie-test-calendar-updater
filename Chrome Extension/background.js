@@ -27,25 +27,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "syncCalendar") {
-    try {
-      const exams = JSON.parse(message.examData);
-      console.log("Sync Calendar Triggered with:", exams);
-      exams.forEach((e) => {
-        console.log(
-          `- ${e.name}\n  Date: ${e.date}\n  Duration: ${e.duration}\n  Location: ${e.location}\n`
-        );
-      });
-
-      syncWithOutlookCalendar(exams);
-    } catch (err) {
-      console.error("Error syncing calendar:", err);
-    }
+    chrome.storage.local.get("preferredCalendar", ({ preferredCalendar }) => {
+      if (preferredCalendar === "google") {
+        syncWithGoogleCalendar(exams);
+      } else {
+        syncWithOutlookCalendar(exams);
+      }
+    });    
   }
 });
 
-/**
- * Attempts to find or create the "Exams" calendar in Outlook
- */
 async function getOrCreatePrairieTestCalendar(token) {
   const calendarsRes = await fetch(
     "https://graph.microsoft.com/v1.0/me/calendars",
@@ -81,9 +72,6 @@ async function getOrCreatePrairieTestCalendar(token) {
   return calendar.id;
 }
 
-/**
- * Normal logic: compare times/locations, skip unchanged
- */
 async function syncWithOutlookCalendar(exams) {
   return new Promise((resolve) => {
     chrome.storage.local.get(
@@ -162,7 +150,8 @@ async function syncWithOutlookCalendar(exams) {
               (existingEvent.location?.displayName || "").trim() ===
               exam.location.trim();
 
-            if (!locationsMatch) { // temp removed !timesMatch || 
+            if (!locationsMatch) {
+              // temp removed !timesMatch ||
               console.log(`Updating event: ${exam.name}`);
 
               // if (!timesMatch) {
@@ -237,13 +226,6 @@ async function syncWithOutlookCalendar(exams) {
   });
 }
 
-/**
- * parseExamDateTime:
- *
- * If your machine is physically in Chicago,
- *   new Date(...) is correct for PrairieTest’s “(CDT)” times.
- * If not, you may need a library like Luxon or Day.js Timezone.
- */
 function parseExamDateTime(dateStr) {
   const normalized = dateStr.replace(/\u00A0/g, " ").trim();
   const noZone = normalized.replace(/\(.*?\)/, "").trim();
@@ -285,12 +267,6 @@ function parseExamDateTime(dateStr) {
   return localDate;
 }
 
-/**
- * getDurationMinutes:
- *
- * If exam.duration is "1 h 50 min", parse → 110
- * If it's an object, we handle that too.
- */
 function getDurationMinutes(duration) {
   if (typeof duration === "object" && duration.start && duration.end) {
     const start = new Date(duration.start.dateTime);
@@ -309,8 +285,6 @@ function getDurationMinutes(duration) {
   return short ? parseInt(short[1], 10) : 60;
 }
 
-
-// On extension startup:
 chrome.runtime.onStartup.addListener(() => {
   refreshTokenIfNeeded();
 });
@@ -319,9 +293,6 @@ async function refreshTokenIfNeeded() {
   chrome.storage.local.get("ms_token", async ({ ms_token }) => {
     if (!ms_token) return;
     if (!ms_token.refresh_token) return;
-
-    // If your ms_token has an 'expires_in' or 'expires_on', check if it's near expiry
-    // e.g. if Date.now() > ms_token.expires_on - 60s => refresh
 
     try {
       const newToken = await refreshWithMicrosoft(ms_token.refresh_token);
@@ -338,11 +309,11 @@ async function refreshTokenIfNeeded() {
 async function refreshWithMicrosoft(refresh_token) {
   const tokenUrl = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
   const bodyParams = new URLSearchParams({
-    client_id: CLIENT_ID,  
+    client_id: CLIENT_ID,
     grant_type: "refresh_token",
     refresh_token,
     redirect_uri: REDIRECT_URI,
-    scope: SCOPE
+    scope: SCOPE,
   });
 
   const resp = await fetch(tokenUrl, {
@@ -355,4 +326,64 @@ async function refreshWithMicrosoft(refresh_token) {
     throw new Error("Refresh failed: " + JSON.stringify(err));
   }
   return resp.json();
+}
+
+async function syncWithGoogleCalendar(exams) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get("google_token", async ({ google_token }) => {
+      if (!google_token?.access_token) {
+        console.warn("Not logged in to Google");
+        return resolve("No token");
+      }
+
+      const token = google_token.access_token;
+
+      for (const exam of exams) {
+        const start = parseExamDateTime(exam.date);
+        if (!start) {
+          console.warn(`Could not parse date for: ${exam.name}`);
+          continue;
+        }
+
+        const end = new Date(
+          start.getTime() + getDurationMinutes(exam.duration) * 60000
+        );
+
+        const newEvent = {
+          summary: exam.name,
+          start: {
+            dateTime: start.toISOString(),
+            timeZone: "America/Chicago",
+          },
+          end: {
+            dateTime: end.toISOString(),
+            timeZone: "America/Chicago",
+          },
+          location: exam.location,
+          description: event_notes,
+        };
+
+        const response = await fetch(
+          "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(newEvent),
+          }
+        );
+
+        if (response.ok) {
+          console.log(`✅ Created Google event: ${exam.name}`);
+        } else {
+          const err = await response.json();
+          console.warn(`❌ Failed to create Google event: ${exam.name}`, err);
+        }
+      }
+
+      resolve("Google sync complete.");
+    });
+  });
 }
