@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PrairieTest Calendar Sync",
-  "version": "1.3.39",
+  "version": "1.3.6",
   "description": "Watches PrairieTest for exam changes and syncs them to your calendar.",
   "permissions": [
     "storage",
@@ -16,7 +16,8 @@
     "https://www.googleapis.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {

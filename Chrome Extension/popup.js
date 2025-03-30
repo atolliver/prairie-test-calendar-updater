@@ -85,48 +85,57 @@ document.getElementById("testPush-btn").addEventListener("click", async () => {
         "Error pushing to Outlook.";
     }
   } else if (provider === "google") {
-    const event = {
-      summary: "PrairieTest Demo Event",
-      start: {
-        dateTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-        timeZone: "America/Chicago",
-      },
-      end: {
-        dateTime: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
-        timeZone: "America/Chicago",
-      },
-      location: "Demo Location",
-      description: "This is a test event from the PrairieTest extension",
-    };
-
-    try {
-      const response = await fetch(
-        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(event),
-        }
-      );
-
-      const result = await response.json();
-      if (response.ok) {
-        console.log("📅 Google event created:", result);
+    chrome.storage.local.get("google_token", async ({ google_token }) => {
+      if (!google_token?.access_token) {
+        console.error("❌ No Google token available");
         document.getElementById("status").textContent =
-          "Event pushed to Google Calendar!";
-      } else {
-        console.error("❌ Google push failed:", result);
-        document.getElementById("status").textContent =
-          "Failed to push event to Google Calendar.";
+          "Login required for Google Calendar.";
+        return;
       }
-    } catch (err) {
-      console.error("❗ Google push error:", err);
-      document.getElementById("status").textContent =
-        "Error pushing to Google Calendar.";
-    }
+
+      const event = {
+        summary: "PrairieTest Demo Event",
+        start: {
+          dateTime: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          timeZone: "America/Chicago",
+        },
+        end: {
+          dateTime: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
+          timeZone: "America/Chicago",
+        },
+        location: "Demo Location",
+        description: "This is a test event from the PrairieTest extension",
+      };
+
+      try {
+        const response = await fetch(
+          "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${google_token.access_token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(event),
+          }
+        );
+
+        const result = await response.json();
+        if (response.ok) {
+          console.log("📅 Google event created:", result);
+          document.getElementById("status").textContent =
+            "Event pushed to Google Calendar!";
+        } else {
+          console.error("❌ Google push failed:", result);
+          document.getElementById("status").textContent =
+            "Failed to push event to Google Calendar.";
+        }
+      } catch (err) {
+        console.error("❗ Google push error:", err);
+        document.getElementById("status").textContent =
+          "Error pushing to Google Calendar.";
+      }
+    });
   } else {
     console.error("❌ Unknown provider:", provider);
     document.getElementById("status").textContent =
@@ -162,6 +171,7 @@ export async function ensureLoggedIn(provider) {
       chrome.storage.local.get("google_token", async ({ google_token }) => {
         if (google_token) return resolve(google_token);
         const token = await authenticateWithGoogle();
+
         return resolve(token);
       });
     } else if (provider === "outlook") {
