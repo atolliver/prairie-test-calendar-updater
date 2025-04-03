@@ -3,16 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <title>PrairieTest Calendar Sync</title>
-    <script type="module" src="popup.js"></script>
+    <script type="module" src="popup.js" defer></script>
     <style>
       body {
         font-family: sans-serif;
         padding: 10px;
         width: 300px;
       }
-      button {
+      button,
+      input,
+      select {
         margin-top: 8px;
         display: block;
+        width: 100%;
       }
       #status {
         margin-top: 12px;
@@ -30,9 +33,23 @@
       <option value="google">Google</option>
     </select>
 
-    <button id="forceSync-btn">Force Sync</button>
+    <label for="calendarName">Calendar Name (optional):</label>
+    <input type="text" id="calendarName" placeholder="Exams" />
+
+    <label for="eventNotes">Event Notes (optional):</label>
+    <input type="text" id="eventNotes" placeholder="Synced Automatically" />
+
+    <button id="forceSync">Force Sync</button>
     <button id="testPush-btn">Push Test Event</button>
+    <button id="deleteAll">Delete All Exams</button>
+    <button id="resetTokens">Clear Saved Tokens</button>
 
     <p id="status"></p>
   </body>
+  <div>
+    <label>
+      <input type="checkbox" id="debugToggle" />
+      Enable Debug Mode
+    </label>
+  </div>
 </html>

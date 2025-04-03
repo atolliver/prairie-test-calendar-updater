@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PrairieTest Calendar Sync",
-  "version": "1.3.6",
-  "description": "Watches PrairieTest for exam changes and syncs them to your calendar.",
+  "version": "1.3.18",
+  "description": "Watches PrairieTest for exam changes and syncs exams to your calendar.",
   "permissions": [
     "storage",
     "identity",
@@ -33,3 +33,4 @@
     "default_popup": "popup.html"
   }
 }
+

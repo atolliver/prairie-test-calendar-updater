@@ -71,11 +71,6 @@ function cleanExamName(rawName) {
       exams.push(exam);
     });
   
-    console.log("📘 Parsed Exams:");
-    exams.forEach(e => {
-      console.log(`- ${e.name}\n  Date: ${e.date}\n  Duration: ${e.duration}\n  Location: ${e.location}\n`);
-    });
-  
     return exams;
   }  
 
