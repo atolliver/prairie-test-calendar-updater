@@ -3,33 +3,47 @@ import { SYNC_TAG } from "/background.js";
 
 let DEBUG_MODE = true;
 
+// Spinner helpers
+function showSpinner() {
+  document.getElementById("spinner").style.display = "block";
+}
+function hideSpinner() {
+  document.getElementById("spinner").style.display = "none";
+}
+
 // Create a long-lived connection to the background script:
 const port = chrome.runtime.connect({ name: "popup" });
 
 // Listen for any messages from background
-port.onMessage.addListener((message, portSender) => {
+port.onMessage.addListener((message) => {
   if (message.action === "deletionResults") {
+    hideSpinner();
     const { provider, deleted } = message;
     const status = document.getElementById("status");
+    const eventLog = document.getElementById("eventLog");
     const label = provider === "google" ? "Google" : "Outlook";
 
     if (DEBUG_MODE) {
-      if (deleted.length === 0) {
-        console.log(`No ${label} events deleted.`);
-      } else {
-        console.log(`Deleted ${label} events:`, deleted);
-      }
+      console.log(`Received deletion results for ${label}:`, deleted);
     }
 
     if (deleted.length === 0) {
       status.textContent = `No ${label} events found to delete.`;
+      eventLog.innerHTML = `<div>No ${label} events to delete.</div>`;
     } else {
       status.textContent = `Deleted ${deleted.length} ${label} events.`;
+      eventLog.innerHTML = deleted
+        .map((ev) => {
+          const name = typeof ev === "object" ? ev.name : ev;
+          const calendar = typeof ev === "object" ? ` (${ev.calendar})` : "";
+          return `<div>✓ ${name}${calendar}</div>`;
+        })
+        .join("");
     }
   }
 });
 
-// Initialize debug checkbox
+// Initialize debug checkbox and restore settings
 document.addEventListener("DOMContentLoaded", () => {
   chrome.storage.local.get(["debug_mode"], ({ debug_mode }) => {
     DEBUG_MODE = !!debug_mode;
@@ -40,10 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
     DEBUG_MODE = e.target.checked;
     chrome.storage.local.set({ debug_mode: DEBUG_MODE });
   });
-});
 
-// Restore user preferences on popup load
-document.addEventListener("DOMContentLoaded", () => {
   const calendarToggle = document.getElementById("calendarChoice");
   const calendarNameInput = document.getElementById("calendarName");
   const eventNotesInput = document.getElementById("eventNotes");
@@ -72,43 +83,67 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// Force sync button
+// Force Sync button
 document.getElementById("forceSync").addEventListener("click", () => {
-  document.getElementById("status").textContent = "Triggering sync...";
+  const status = document.getElementById("status");
+  const eventLog = document.getElementById("eventLog");
+
+  status.textContent = "Syncing exams... please wait.";
+  eventLog.innerHTML = "";
+  showSpinner();
+
   chrome.storage.local.get("lastExamState", (data) => {
     const examData = data.lastExamState || "";
     chrome.runtime.sendMessage({
       action: "syncCalendar",
       examData,
     });
-    document.getElementById("status").textContent = "Sync triggered.";
+    status.textContent = "Sync triggered.";
+    hideSpinner();
   });
 });
 
-// Delete all button
+// Delete All button
 document.getElementById("deleteAll").addEventListener("click", async () => {
+  const status = document.getElementById("status");
+  const eventLog = document.getElementById("eventLog");
+
+  status.textContent = "Deleting events... please wait.";
+  eventLog.innerHTML = "";
+  showSpinner();
+
   const provider = await getCalendarProvider();
   const token = await ensureLoggedIn(provider);
   if (!token) {
-    console.error("Login required to delete events");
-    document.getElementById("status").textContent = "Login required.";
+    if (DEBUG_MODE) {
+      console.error("Login required to delete events");
+    }
+    status.textContent = "Login required.";
+    hideSpinner();
     return;
   }
 
-  // We'll rely on the background script to do the deletion,
-  // and then the background script will send us "deletionResults"
   chrome.runtime.sendMessage({ action: "deleteAllExams" });
 });
 
-// "Push Test Event" button
+// Push Test Event button
 document.getElementById("testPush-btn").addEventListener("click", async () => {
+  const status = document.getElementById("status");
+  const eventLog = document.getElementById("eventLog");
+
+  status.textContent = "Pushing test event...";
+  eventLog.innerHTML = "";
+  showSpinner();
+
   const provider = await getCalendarProvider();
   const token = await ensureLoggedIn(provider);
 
   if (!token) {
-    console.error("Login required.");
-    document.getElementById("status").textContent =
-      "Login required to push test event.";
+    if (DEBUG_MODE) {
+      console.error("Login required.");
+    }
+    status.textContent = "Login required to push test event.";
+    hideSpinner();
     return;
   }
 
@@ -117,31 +152,22 @@ document.getElementById("testPush-btn").addEventListener("click", async () => {
   );
 
   const eventName = "PrairieTest Demo Event";
-  const eventDescription = event_notes || "This is a test event";
+  const eventDescription =
+    (event_notes || "This is a test event") + ` ${SYNC_TAG}`;
   const calendarTarget = calendar_name || "primary";
 
   const start = new Date(Date.now() + 5 * 60 * 1000);
   const end = new Date(Date.now() + 35 * 60 * 1000);
 
-  // Outlook or Google
   if (provider === "outlook") {
     const calendarId = await getOutlookCalendarId(token);
 
     const event = {
       subject: eventName,
-      start: {
-        dateTime: start.toISOString(),
-        timeZone: "UTC",
-      },
-      end: {
-        dateTime: end.toISOString(),
-        timeZone: "UTC",
-      },
+      start: { dateTime: start.toISOString(), timeZone: "UTC" },
+      end: { dateTime: end.toISOString(), timeZone: "UTC" },
       location: { displayName: "Demo Location" },
-      body: {
-        contentType: "HTML",
-        content: `${eventDescription} ${SYNC_TAG}`,
-      },
+      body: { contentType: "HTML", content: eventDescription },
     };
 
     const response = await fetch(
@@ -160,28 +186,21 @@ document.getElementById("testPush-btn").addEventListener("click", async () => {
       if (DEBUG_MODE) {
         console.log("Outlook event created:", result);
       }
-      document.getElementById("status").textContent =
-        "Event pushed to Outlook!";
+      status.textContent = "Event pushed to Outlook!";
     } else {
       if (DEBUG_MODE) {
         console.error("Outlook push failed:", result);
       }
-      document.getElementById("status").textContent =
-        "Failed to push event to Outlook.";
+      status.textContent = "Failed to push event to Outlook.";
     }
+    hideSpinner();
   } else if (provider === "google") {
     const event = {
       summary: eventName,
-      start: {
-        dateTime: start.toISOString(),
-        timeZone: "America/Chicago",
-      },
-      end: {
-        dateTime: end.toISOString(),
-        timeZone: "America/Chicago",
-      },
+      start: { dateTime: start.toISOString(), timeZone: "America/Chicago" },
+      end: { dateTime: end.toISOString(), timeZone: "America/Chicago" },
       location: "Demo Location",
-      description: `${eventDescription} ${SYNC_TAG}`,
+      description: eventDescription,
     };
 
     const response = await fetch(
@@ -197,24 +216,38 @@ document.getElementById("testPush-btn").addEventListener("click", async () => {
         body: JSON.stringify(event),
       }
     );
-
     const result = await response.json();
     if (response.ok) {
       if (DEBUG_MODE) {
         console.log("Google event created:", result);
       }
-      document.getElementById("status").textContent =
-        "Event pushed to Google Calendar!";
+      status.textContent = "Event pushed to Google Calendar!";
     } else {
       if (DEBUG_MODE) {
         console.error("Google push failed:", result);
       }
-      document.getElementById("status").textContent =
-        "Failed to push event to Google Calendar.";
+      status.textContent = "Failed to push event to Google Calendar.";
     }
+    hideSpinner();
   }
 });
 
+// Reset Tokens button
+document.getElementById("resetTokens").addEventListener("click", () => {
+  const status = document.getElementById("status");
+  const eventLog = document.getElementById("eventLog");
+
+  status.textContent = "Clearing tokens...";
+  eventLog.innerHTML = "";
+  showSpinner();
+
+  chrome.storage.local.remove(["ms_token", "google_token"], () => {
+    status.textContent = "Tokens cleared.";
+    hideSpinner();
+  });
+});
+
+// Helper for Outlook calendar fetching
 async function getOutlookCalendarId(token) {
   const { calendar_name, prairieTestCalendarId } = await new Promise(
     (resolve) =>
@@ -245,31 +278,5 @@ async function getOutlookCalendarId(token) {
     return calendar.id;
   }
 
-  const createRes = await fetch(
-    "https://graph.microsoft.com/v1.0/me/calendars",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name }),
-    }
-  );
-  const newCal = await createRes.json();
-  if (newCal?.id) {
-    chrome.storage.local.set({ prairieTestCalendarId: newCal.id });
-    return newCal.id;
-  }
-
-  throw new Error("Failed to create Outlook calendar");
+  return null;
 }
-
-document.getElementById("resetTokens").addEventListener("click", () => {
-  chrome.storage.local.remove(["ms_token", "google_token"], () => {
-    document.getElementById("status").textContent = "Tokens cleared.";
-    if (DEBUG_MODE) {
-      console.log("🔄 Tokens cleared.");
-    }
-  });
-});

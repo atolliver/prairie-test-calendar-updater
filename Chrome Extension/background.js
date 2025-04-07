@@ -1,4 +1,5 @@
 import { MICROSOFT_CLIENT_ID } from "/Secrets.js";
+import { DEBUG_MODE } from "/popup.js";
 
 // A tag we'll look for in event body/description to distinguish PrairieTest events
 export const SYNC_TAG = "<!-- prairietest:sync -->";
@@ -40,10 +41,14 @@ async function refreshGoogleIfNeeded() {
       const newToken = await refreshWithGoogle(google_token.refresh_token);
       if (newToken.access_token) {
         chrome.storage.local.set({ google_token: newToken });
-        console.log("✅ Google token refreshed.");
+        if (DEBUG_MODE) {
+          console.log("✅ Google token refreshed.");
+        }
       }
     } catch (err) {
-      console.warn("❌ Google token refresh failed:", err);
+      if (DEBUG_MODE) {
+        console.warn("❌ Google token refresh failed:", err);
+      }
     }
   });
 }
@@ -54,14 +59,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.storage.local.get(["lastExamState"], (data) => {
       const oldState = data.lastExamState || "";
       if (oldState !== message.examData) {
-        console.log("📅 Exam data changed. Syncing calendar...");
+        if (DEBUG_MODE) {
+          console.log("📅 Exam data changed. Syncing calendar...");
+        }
         chrome.storage.local.set({ lastExamState: message.examData });
         chrome.runtime.sendMessage({
           action: "syncCalendar",
           examData: message.examData,
         });
       } else {
-        console.log("📅 No change in exam data, skipping sync.");
+        if (DEBUG_MODE) {
+          console.log("📅 No change in exam data, skipping sync.");
+        }
       }
     });
   }
@@ -80,7 +89,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       );
     } catch (err) {
-      console.error("Calendar sync error:", err);
+      if (DEBUG_MODE) {
+        console.error("Calendar sync error:", err);
+      }
     }
   }
 
@@ -112,7 +123,9 @@ async function syncWithOutlookCalendar(exams) {
         const eventNotes = data.eventNotes;
 
         if (!msToken?.access_token) {
-          console.warn("Not logged in to Microsoft");
+          if (DEBUG_MODE) {
+            console.warn("Not logged in to Microsoft");
+          }
           return resolve("No token");
         }
         const token = msToken.access_token;
@@ -177,7 +190,9 @@ async function syncWithOutlookCalendar(exams) {
               (existingEvent.location?.displayName || "").trim() !==
               exam.location.trim();
             if (locationChanged) {
-              console.log(`Updating event: ${exam.name}`);
+              if (DEBUG_MODE) {
+                console.log(`Updating event: ${exam.name}`);
+              }
               const patchRes = await fetch(
                 `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${existingEvent.id}`,
                 {
@@ -190,14 +205,20 @@ async function syncWithOutlookCalendar(exams) {
                 }
               );
               if (patchRes.ok) {
-                console.log(`Updated event: ${exam.name}`);
+                if (DEBUG_MODE) {
+                  console.log(`Updated event: ${exam.name}`);
+                }
                 updated.push(key);
               } else {
                 const err = await patchRes.json();
-                console.warn(`Failed to update event: ${exam.name}`, err);
+                if (DEBUG_MODE) {
+                  console.warn(`Failed to update event: ${exam.name}`, err);
+                }
               }
             } else {
-              console.log(`Skipped unchanged event: ${exam.name}`);
+              if (DEBUG_MODE) {
+                console.log(`Skipped unchanged event: ${exam.name}`);
+              }
               skipped.push(key);
             }
           } else {
@@ -214,18 +235,24 @@ async function syncWithOutlookCalendar(exams) {
               }
             );
             if (createRes.ok) {
-              console.log(`Created new event: ${exam.name}`);
+              if (DEBUG_MODE) {
+                console.log(`Created new event: ${exam.name}`);
+              }
               created.push(key);
             } else {
               const err = await createRes.json();
-              console.warn(`Failed to create event: ${exam.name}`, err);
+              if (DEBUG_MODE) {
+                console.warn(`Failed to create event: ${exam.name}`, err);
+              }
             }
           }
         }
+        if (DEBUG_MODE) {
+          console.log(
+            `✅ Outlook sync complete. Created: ${created.length}, Updated: ${updated.length}, Skipped: ${skipped.length}`
+          );
+        }
 
-        console.log(
-          `✅ Outlook sync complete. Created: ${created.length}, Updated: ${updated.length}, Skipped: ${skipped.length}`
-        );
         resolve("Outlook sync finished");
       }
     );
@@ -242,7 +269,9 @@ async function syncWithGoogleCalendar(exams) {
       ["google_token", "calendarName", "eventNotes"],
       async (data) => {
         if (!data.google_token?.access_token) {
-          console.warn("Not logged in to Google");
+          if (DEBUG_MODE) {
+            console.warn("Not logged in to Google");
+          }
           return resolve("No token");
         }
 
@@ -301,7 +330,10 @@ async function syncWithGoogleCalendar(exams) {
             const locationChanged =
               (existingEvent.location || "").trim() !== exam.location.trim();
             if (locationChanged) {
-              console.log(`Updating Google event: ${exam.name}`);
+              if (DEBUG_MODE) {
+                console.log(`Updating Google event: ${exam.name}`);
+              }
+
               const patchRes = await fetch(
                 `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
                   calendarId
@@ -319,7 +351,9 @@ async function syncWithGoogleCalendar(exams) {
                 updated.push(exam.name);
               } else {
                 const err = await patchRes.json();
-                console.warn(`❌ Failed to update event: ${exam.name}`, err);
+                if (DEBUG_MODE) {
+                  console.warn(`❌ Failed to update event: ${exam.name}`, err);
+                }
               }
             } else {
               skipped.push(exam.name);
@@ -343,17 +377,20 @@ async function syncWithGoogleCalendar(exams) {
               created.push(exam.name);
             } else {
               const err = await createRes.json();
-              console.warn(
-                `❌ Failed to create Google event: ${exam.name}`,
-                err
-              );
+              if (DEBUG_MODE) {
+                console.warn(
+                  `❌ Failed to create Google event: ${exam.name}`,
+                  err
+                );
+              }
             }
           }
         }
-
-        console.log(
-          `🔁 Google sync complete. Created: ${created.length}, Updated: ${updated.length}, Skipped: ${skipped.length}`
-        );
+        if (DEBUG_MODE) {
+          console.log(
+            `🔁 Google sync complete. Created: ${created.length}, Updated: ${updated.length}, Skipped: ${skipped.length}`
+          );
+        }
         resolve("Google sync finished");
       }
     );
@@ -366,39 +403,58 @@ async function syncWithGoogleCalendar(exams) {
  */
 async function deleteAllOutlookEvents() {
   chrome.storage.local.get(
-    ["ms_token", "calendarName", "eventTag", "debugMode"],
-    async ({ ms_token, calendarName, eventTag, debugMode }) => {
+    ["ms_token", "eventTag"],
+    async ({ ms_token, eventTag }) => {
       if (!ms_token?.access_token) return;
+
       const token = ms_token.access_token;
-      const calendarId = await getOrCreateOutlookCalendar(token, calendarName);
       const deleted = [];
-
-      const eventsRes = await fetch(
-        `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events?$top=100`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      if (DEBUG_MODE) {
+        console.log("Fetching all Outlook calendars..."); // Extensive Logging
+      }
+      const calendarsRes = await fetch(
+        `https://graph.microsoft.com/v1.0/me/calendars`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
+      const calendarList = await calendarsRes.json();
+      const calendars = calendarList.value || [];
 
-      const data = await eventsRes.json();
-      const events = data.value || [];
+      for (const calendar of calendars) {
+        const calendarId = calendar.id;
+        if (DEBUG_MODE) {
+          console.log(`Scanning calendar: ${calendar.name} (${calendarId})`); // Extensive Logging
+        }
 
-      for (const ev of events) {
-        const body = ev.body?.content || "";
-        if (body.includes(eventTag || SYNC_TAG)) {
-          // Instead of ev.subject, push the entire event object:
-          deleted.push(ev);
+        const eventsRes = await fetch(
+          `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events?$top=100`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await eventsRes.json();
+        const events = data.value || [];
 
-          // Then delete:
-          await fetch(
-            `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${ev.id}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
+        for (const ev of events) {
+          const body = ev.body?.content || "";
+          if (body.includes(eventTag || SYNC_TAG)) {
+            if (DEBUG_MODE) {
+              console.log(
+                `Deleting Outlook event: ${ev.subject} from ${calendar.name}`
+              );
             }
-          );
+
+            await fetch(
+              `https://graph.microsoft.com/v1.0/me/calendars/${calendarId}/events/${ev.id}`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            deleted.push({ name: ev.subject, calendar: calendar.name });
+          }
         }
       }
 
-      // Send the list of deleted events back to the popup
       connectedPorts.forEach((port) => {
         if (port.name === "popup") {
           port.postMessage({
@@ -414,43 +470,62 @@ async function deleteAllOutlookEvents() {
 
 async function deleteAllGoogleEvents() {
   chrome.storage.local.get(
-    ["google_token", "calendarName", "eventTag", "debugMode"],
-    async ({ google_token, calendarName, eventTag, debugMode }) => {
+    ["google_token", "eventTag"],
+    async ({ google_token, eventTag }) => {
       if (!google_token?.access_token) return;
+
       const token = google_token.access_token;
-      const calendarId = calendarName || "primary";
       const deleted = [];
+      if (DEBUG_MODE) {
+        console.log("Fetching all Google calendars...");
+      }
 
-      const listRes = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
-          calendarId
-        )}/events?maxResults=2500`,
-        { headers: { Authorization: `Bearer ${token}` } }
+      const calendarsRes = await fetch(
+        `https://www.googleapis.com/calendar/v3/users/me/calendarList`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
+      const calendarList = await calendarsRes.json();
+      const calendars = calendarList.items || [];
 
-      const data = await listRes.json();
-      const events = data.items || [];
+      for (const calendar of calendars) {
+        const calendarId = calendar.id;
+        if (DEBUG_MODE) {
+          console.log(`Scanning calendar: ${calendar.summary} (${calendarId})`); // Extensive Logging
+        }
 
-      for (const ev of events) {
-        const desc = ev.description || "";
-        if (desc.includes(eventTag || SYNC_TAG)) {
-          // Instead of just ev.summary, push the entire object:
-          deleted.push(ev);
+        const eventsRes = await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+            calendarId
+          )}/events?maxResults=2500`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = await eventsRes.json();
+        const events = data.items || [];
 
-          // Then delete:
-          await fetch(
-            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
-              calendarId
-            )}/events/${ev.id}`,
-            {
-              method: "DELETE",
-              headers: { Authorization: `Bearer ${token}` },
+        for (const ev of events) {
+          const desc = ev.description || "";
+          if (desc.includes(eventTag || SYNC_TAG)) {
+            if (DEBUG_MODE) {
+              console.log(
+                `Deleting Google event: ${ev.summary} from ${calendar.summary}`
+              ); // Extensive Logging
             }
-          );
+            await fetch(
+              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+                calendarId
+              )}/events/${ev.id}`,
+              {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+            deleted.push({ name: ev.summary, calendar: calendar.summary });
+          }
         }
       }
 
-      // Send the list of deleted events back to the popup
       connectedPorts.forEach((port) => {
         if (port.name === "popup") {
           port.postMessage({
@@ -531,7 +606,9 @@ async function getOrCreateOutlookCalendar(token, calendarName) {
     });
     const json = await r.json();
     if (!r.ok || !json.id) {
-      console.warn("Failed to get default Outlook calendar:", json);
+      if (DEBUG_MODE) {
+        console.warn("Failed to get default Outlook calendar:", json);
+      }
       return null;
     }
     return json.id;
@@ -543,7 +620,9 @@ async function getOrCreateOutlookCalendar(token, calendarName) {
   });
   const data = await list.json();
   if (!list.ok || !Array.isArray(data.value)) {
-    console.warn("Failed to list Outlook calendars:", data);
+    if (DEBUG_MODE) {
+      console.warn("Failed to list Outlook calendars:", data);
+    }
     return null;
   }
 
@@ -561,7 +640,9 @@ async function getOrCreateOutlookCalendar(token, calendarName) {
   });
   const newCal = await create.json();
   if (!create.ok || !newCal.id) {
-    console.warn("Failed to create Outlook calendar:", newCal);
+    if (DEBUG_MODE) {
+      console.warn("Failed to create Outlook calendar:", newCal);
+    }
     return null;
   }
   return newCal.id;
@@ -576,10 +657,14 @@ async function refreshTokenIfNeeded() {
       const newToken = await refreshWithMicrosoft(ms_token.refresh_token);
       if (newToken.access_token) {
         chrome.storage.local.set({ ms_token: newToken });
-        console.log("Successfully refreshed Microsoft token.");
+        if (DEBUG_MODE) {
+          console.log("Successfully refreshed Microsoft token.");
+        }
       }
     } catch (err) {
-      console.warn("Microsoft token refresh failed:", err);
+      if (DEBUG_MODE) {
+        console.warn("Microsoft token refresh failed:", err);
+      }
     }
   });
 }
